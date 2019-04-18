@@ -1,0 +1,212 @@
+classdef connStructHandler
+    %CONNSTRUCTHANDLER Summary of this class goes here
+    %   Detailed explanation goes here
+    
+    properties
+    end
+    
+    methods
+    end
+    
+    methods (Static=true)
+        function doRoi2RoiCorrAnalysis_groupXtime(outdir, matfiles, group, timepoint, groupNames, rois)
+            %it makes summary for each group including 1 sample t test and
+            %also does 2 smaple test between groups.
+            if(~exist('nameAffix', 'var'))
+                nameAffix='';
+            end
+            if(~exist(outdir,'file'))
+                mkdir(outdir);
+            end
+            
+            if(~exist('rois','var'))
+                matf=matfiles{1};
+                x=load(matf);
+                rois1=x.names;
+                rois2=x.names2;
+            else
+                rois1=rois;
+                rois2=rois;
+            end
+            
+            gids=unique(group);
+            tids=unique(timepoint);
+            corrMats=connStructHandler.getCorrMat_roi2roi(matfiles,rois1,rois2);
+            
+            noG=length(gids);
+            noT=length(tids);
+            
+            matsGT=cell(noG,noT);
+            %export summary at each G T combaniation
+            for g=1:noG
+                gid=gids(g);
+                gname=groupNames{g};
+                idxg=group==gid;
+                for t=1:noT
+                    tid=tids(t);
+                    idxt=timepoint==tid;
+                    idx=(idxg.*idxt)>0;
+                    mat=corrMats(:,:,idx);
+                    matsGT{g,t}=mat;
+                    nameAffix=['_' gname '_tp' num2str(tid)]; 
+                    connStructHandler.exportCorrMatSummary_roi2roi(mat,rois1,rois2,outdir,nameAffix)
+                end
+            end
+
+            %export summary of change
+            matsGT_change=cell(noG,noT-1);%correlation cnages
+            changeAffixs=cell(noT-1);
+            for g=1:noG
+                gname=groupNames{g};
+                for t1=1:noT
+                    mat1=matsGT{g,t1};
+                    if(t1<noT)
+                        t2=t1+1;
+                        mat2=matsGT{g,t2};
+                        mat=mat2-mat1;
+                        changeAffix=['_change_tp' num2str(t1) 'totp' num2str(t2)];
+                        changeAffixs{t1}=changeAffix;
+                        nameAffix=['_' gname changeAffix]; 
+                        connStructHandler.exportCorrMatSummary_roi2roi(mat,rois1,rois2,outdir,nameAffix);
+                        matsGT_change{g,t1}=mat;
+                    end
+                end
+            end
+            
+            
+            %export comparisons
+            for g1=1:noG-1
+                gname1=groupNames{g1};
+                for g2=g1+1:noG
+                    gname2=groupNames{g2};
+                    for t=1:noT
+                        %comparing corr mats
+                        mat1=matsGT{g1,t};
+                        mat2=matsGT{g2,t};
+                        nameAffix=['_' gname1 '_' gname2 '_TP' num2str(t)];
+                        connStructHandler.exportCorrMatComparison_ttest2(mat1,mat2,rois1,rois2,outdir,nameAffix);
+                        if(t<noT)
+                            %comparing corr mats change
+                            mat1=matsGT_change{g1,t};
+                            mat2=matsGT_change{g2,t};
+                            nameAffix=['_' gname1 '_' gname2 changeAffixs{t}];
+                            connStructHandler.exportCorrMatComparison_ttest2(mat1,mat2,rois1,rois2,outdir,nameAffix);
+                        end
+                    end
+                end
+            end
+        end
+        function exportCorrMatComparison_ttest2(corrMat1, corrMat2,rois1,rois2,outdir,nameAffix)
+            cd(outdir);
+            if(~exist('nameAffix', 'var'))
+                nameAffix='';
+            end
+            rows=size(corrMat1,1);
+            cols=size(corrMat1,2);
+            ts=nan(rows,cols);
+            ps=nan(rows,cols);
+            for r=1:rows
+                for c=1:cols
+                    els1=corrMat1(r,c,:);
+                    els2=corrMat2(r,c,:);
+                    [~,p,~,stat]=ttest2(els1,els2);
+                    ps(r,c)=p;
+                    ts(r,c)=stat.tstat;
+                end
+            end
+            fnamep=fullfile(outdir,['corrMat_ttest2_p' nameAffix '.tsv']);
+            fnamet=fullfile(outdir,['corrMat_ttest2_t' nameAffix '.tsv']);
+            fidt=fopen(fnamet,'wt');
+            fidp=fopen(fnamep,'wt');
+            c=CommonMethods.tab;
+            line='rois';
+            for i=1:length(rois2)
+                line=[line c rois2{i}];
+            end
+            fprintf(fidt,'%s\n',line);
+            fprintf(fidp,'%s\n',line);
+            
+            for i=1:length(rois1)
+                lt=rois1{i};
+                lp=lt;
+                for j=1:length(rois2)
+                    lt=[lt c sprintf('%10.4f',ts(i,j))];
+                    lp=[lp c sprintf('%10.7f',ps(i,j))];
+                end
+                fprintf(fidt,'%s\n',lt);
+                fprintf(fidp,'%s\n',lp);
+            end
+            fclose(fidt);
+            fclose(fidp);
+        end
+        function exportCorrMatSummary_roi2roi(corrMat,rois1,rois2,outdir,nameAffix)
+            if(~exist('nameAffix', 'var'))
+                nameAffix='';
+            end
+           cd(outdir);
+            rows=size(corrMat,1);
+            cols=size(corrMat,2);
+            ms=nan(rows,cols);
+            sds=nan(rows,cols);
+            ps=nan(rows,cols);
+            for r=1:rows
+                for c=1:cols
+                    els=corrMat(r,c,:);
+                    ms(r,c)=mean(els);
+                    sds(r,c)=std(els);
+                    [~,p]=ttest(els);
+                    ps(r,c)=p;
+                end
+            end
+            fnamem=fullfile(outdir,['corrMat_mean' nameAffix '.tsv']);
+            fnames=fullfile(outdir,['corrMat_std' nameAffix '.tsv']);
+            fnamep=fullfile(outdir,['corrMat_p' nameAffix '.tsv']);
+            fidm=fopen(fnamem,'wt');
+            fids=fopen(fnames,'wt');
+            fidp=fopen(fnamep,'wt');
+            c=CommonMethods.tab;
+            line='rois';
+            for i=1:length(rois2)
+                line=[line c rois2{i}];
+            end
+            fprintf(fidm,'%s\n',line);
+            fprintf(fids,'%s\n',line);
+            fprintf(fidp,'%s\n',line);
+            
+            for i=1:length(rois1)
+                lm=rois1{i};
+                ls=lm;
+                lp=lm;
+                for j=1:length(rois2)
+                    lm=[lm c sprintf('%8.4f',ms(i,j))];
+                    ls=[ls c sprintf('%8.4f',sds(i,j))];
+                    lp=[lp c sprintf('%10.7f',ps(i,j))];
+                end
+                fprintf(fidm,'%s\n',lm);
+                fprintf(fids,'%s\n',ls);
+                fprintf(fidp,'%s\n',lp);
+            end
+            fclose(fidm);
+            fclose(fids);
+            fclose(fidp);
+        end
+        function corrMat=getCorrMat_roi2roi(matfiles,rois1,rois2)
+            h=length(rois1);
+            w=length(rois2);
+            len=length(matfiles);
+            corrMat=nan(h,w,len);
+            for s=1:len
+                x=load(matfiles{s});
+                [idx,pos]=ismember(rois1,x.names);
+                rindsl=find(idx);
+                rindsr=pos(rindsl);
+                
+                [idx,pos]=ismember(rois1,x.names2);
+                cindsl=find(idx);
+                cindsr=pos(cindsl); 
+                corrMat(rindsl,cindsl,s)=x.Z(rindsr,cindsr);
+            end
+        end
+    end
+end
+

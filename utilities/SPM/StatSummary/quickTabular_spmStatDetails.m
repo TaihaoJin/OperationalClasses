@@ -1,0 +1,401 @@
+function varargout = quickTabular_spmStatDetails(varargin)
+% QUICKTABULAR_SPMSTATDETAILS MATLAB code for quickTabular_spmStatDetails.fig
+%      QUICKTABULAR_SPMSTATDETAILS, by itself, creates a new QUICKTABULAR_SPMSTATDETAILS or raises the existing
+%      singleton*.
+%
+%      H = QUICKTABULAR_SPMSTATDETAILS returns the handle to a new QUICKTABULAR_SPMSTATDETAILS or the handle to
+%      the existing singleton*.
+%
+%      QUICKTABULAR_SPMSTATDETAILS('CALLBACK',hObject,eventData,handles,...) calls the local
+%      function named CALLBACK in QUICKTABULAR_SPMSTATDETAILS.M with the given input arguments.
+%
+%      QUICKTABULAR_SPMSTATDETAILS('Property','Value',...) creates a new QUICKTABULAR_SPMSTATDETAILS or raises the
+%      existing singleton*.  Starting from the left, property value pairs are
+%      applied to the GUI before quickTabular_spmStatDetails_OpeningFcn gets called.  An
+%      unrecognized property name or invalid value makes property application
+%      stop.  All inputs are passed to quickTabular_spmStatDetails_OpeningFcn via varargin.
+%
+%      *See GUI Options on GUIDE's Tools menu.  Choose "GUI allows only one
+%      instance to run (singleton)".
+%
+% See also: GUIDE, GUIDATA, GUIHANDLES
+
+% Edit the above text to modify the response to help quickTabular_spmStatDetails
+
+% Last Modified by GUIDE v2.5 28-Dec-2017 13:27:40
+
+% Begin initialization code - DO NOT EDIT
+gui_Singleton = 1;
+gui_State = struct('gui_Name',       mfilename, ...
+                   'gui_Singleton',  gui_Singleton, ...
+                   'gui_OpeningFcn', @quickTabular_spmStatDetails_OpeningFcn, ...
+                   'gui_OutputFcn',  @quickTabular_spmStatDetails_OutputFcn, ...
+                   'gui_LayoutFcn',  [] , ...
+                   'gui_Callback',   []);
+if nargin && ischar(varargin{1})
+    gui_State.gui_Callback = str2func(varargin{1});
+end
+
+if nargout
+    [varargout{1:nargout}] = gui_mainfcn(gui_State, varargin{:});
+else
+    gui_mainfcn(gui_State, varargin{:});
+end
+% End initialization code - DO NOT EDIT
+
+
+% --- Executes just before quickTabular_spmStatDetails is made visible.
+function quickTabular_spmStatDetails_OpeningFcn(hObject, eventdata, handles, varargin)
+% This function has no output args, see OutputFcn.
+% hObject    handle to figure
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+% varargin   command line arguments to quickTabular_spmStatDetails (see VARARGIN)
+
+% Choose default command line output for quickTabular_spmStatDetails
+% set(hObject,'WindowButtonDownFcn',@clickcallback);
+% set(hObject,'KeyPressFcn',@keypresscallback);
+% set(hObject,'KeyReleaseFcn',@keyreleasecallback);
+FM.addFigure(hObject,'statDetails');
+handles.output = hObject;
+guiData=handles;
+guiData.lines={};
+guiData.table.header={'A' 'B' 'C' 'D' 'E' 'F'}
+guiData.table.data=cell(6,6);
+guiData.fname='';
+guiData.dim=[1 1];
+guiData.CoordinateColumn=1;
+guiData.mainGui=hObject;
+guiData.updateGUI=@updateGUI;
+% Update handles structure
+guidata(hObject, guiData);
+%updateGUI(hObject);
+% UIWAIT makes quickTabular_spmStatDetails wait for user response (see UIRESUME)
+% uiwait(handles.figure1);
+
+
+
+% --- Outputs from this function are returned to the command line.
+function varargout = quickTabular_spmStatDetails_OutputFcn(hObject, eventdata, handles) 
+% varargout  cell array for returning output args (see VARARGOUT);
+% hObject    handle to figure
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+
+    function displaySPMStatSummary(hObject)
+        FM.addFigure(hObject,'StatDetail');
+        so=spmStatSummaryHandler();
+        guiData=guidata(hObject);
+        ind=get(guiData.SummaryTypeCB,'value');
+        SummaryTypes=get(guiData.SummaryTypeCB,'String');
+        if(strcmp(SummaryTypes(ind), 'Overview'))
+            tbl=so.resultsOutput.table_overview;
+        elseif(strcmp(SummaryTypes(ind), 'Detailed'))
+            tbl=so.resultsOutput.table_detailed;
+        end
+        guiData.SSHandler=so;%spmStatHandler
+        
+        guiData.table=tbl;
+%        cols=size(tbl,2);
+%        guiData.table.header=arrayfun(@(x) CommonMethods.getDefaultColumnNames(x), 1:cols, 'UniformOutput', false);
+        guidata(hObject,guiData);
+        updateGUI(hObject);
+        
+        
+function updated=updatefname(hObject)
+guiData=guiDate(hObject);
+fname=guiData.fname;
+if(~isempty(fname))
+    [initdir,~,~]=fileparts(fname);
+else
+    initdir=CommonEnvMethods.getMatlabProjectPath();
+end
+
+if(~isempty(initdir))
+    cd(initdir);
+end
+
+dialogtitle='Select the file for the table';
+%folder=uigetdir(initdir,dialogtitle);
+%[name,path,filter]=uigetfile('*.csv',dialogtitle);
+[name,path,filter]=uiputfile('*.csv',dialogtitle);
+if(length(path)==1)
+    if(path==0)
+        specified=true;
+    else
+        specified=false;
+    end
+else
+    specified=true;
+end
+if(specified)    
+    guiData.fname=fullfile(path,name);
+    updated=true;   
+    set(guiData.fnameLB,'String',guiData.fname);
+else
+    updated=false;
+end
+
+
+    function updateGUI(hObject)
+        hObject=getMainHObject(hObject);
+        updateTable(hObject);
+        
+    function hObject=getMainHObject(hObject)
+        while(~MainHObject(hObject))
+            hObject=get(hObject,'parent');
+        end
+            
+    function IS=MainHObject(hObject)
+        IS=false;
+        tmp=get(hObject);
+        if(isfield(tmp,'Name'))
+            IS=strcmp(tmp.Name, 'quickTabular_spmStatDetails');
+        end
+        
+        function updateTable(hObject);
+            guiData=guidata(hObject);
+            if(~isfield(guiData,'table'))
+                return;
+            end
+            header=guiData.table.header;
+            data=guiData.table.data;
+            rows=size(data,1);
+            cols=size(data,2);
+            lens=zeros(rows,cols);
+            fs=10;
+            rows=size(data,1)+1;
+            for r=1:rows
+                for c=1:cols
+                    if(r==1)
+                        lens(r,c)=length(header{c});
+                    else
+                        lens(r,c)=length(data{r-1,c});
+                    end
+                end
+            end
+            lens=lens*fs;
+            cellMaxLen=num2cell(max(lens));
+            % if(~isfield(guiData,'htable'))
+            %     guiData.htable=figure();
+            %     guidata(hObject,guiData);
+            % end
+            parent=get(guiData.tablePanel,'parent');
+            position=getpixelposition(guiData.tablePanel,true);
+            if(isfield(guiData, 'hTable'))
+                delete(guiData.hTable);
+            end
+            hTable=uitable(parent,'Data',data,'Position', position,'Units','normalized');
+            guiData.hTable=hTable;
+            %            set(hTable,'ButtonDownFcn',@clickcallback);
+            set(hTable,'KeyPressFcn',@keypresscallback);
+            set(hTable,'KeyReleaseFcn',@keyreleasecallback);
+            %            set(hTable,'Enable','Inactive');%Set 'Enable' off make it firing on left click on the table. Otherwise only firing on wright click.
+            %            set(hTable,'Enable','On');%Set 'Enable' off make it firing on left click on the table. Otherwise only firing on wright click.
+            jscrollpane = findjobj(hTable);
+            jviewport = jscrollpane.getViewport;
+            jtable = jviewport.getView;
+            set(jtable, 'MouseClickedCallback', @clickcallback);
+            if(~isempty(header))
+                set(hTable,'ColumnWidth',cellMaxLen,'columnName',header);
+            end
+            if(isempty(get(hTable,'CellSelectionCallback')))
+                set(hTable,'CellSelectionCallback',@uitable_CellSelectionCallback);
+            end
+            
+            guiData.table.hTable=hTable;
+            guidata(hObject,guiData);
+
+function uitable_CellSelectionCallback(hObject, eventdata, handles)
+    global clickStatus;
+    cellIndices=eventdata.Indices;
+    guiData=guidata(hObject);
+    str=guiData.table.data{cellIndices(end,1),cellIndices(end,2)};
+    coor=CommonMethods.str2nums(str, ' ')';
+    lockImg=get(guiData.LockImageRB, 'Value');
+%    dispStatImg=(length(coor)==3||clickStatus==2)&&~lockImg;
+    dispStatImg=~lockImg;
+    guiData.selectedCellIndices=cellIndices;
+    argout=guiData.SSHandler.resultsOutput.handleTableSelection(guiData.table, cellIndices,dispStatImg,lockImg);
+    exceptions=horzcat(FM.getFigures(), {FM.getFM()});
+        CommonMethods.closeAll(exceptions);
+        set(guiData.CellMsgStr,'String',argout.msg);
+        
+    if(isfield(argout,'xjView'))
+        guiData.xjView=argout.xjView;
+    end
+    
+    if(isfield(argout,'spmExt'))
+        guiData.spmExt=argout.spmExt;
+    end
+    guidata(hObject,guiData);
+    
+% --- Executes on button press in makeHeaderBT.
+function makeHeaderBT_Callback(hObject, eventdata, handles)
+% hObject    handle to makeHeaderBT (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+
+function clickcallback(obj,evt)
+    global clickStatus;
+persistent chk
+if isempty(chk)
+      chk = 1;
+      pause(0.5); %Add a delay to distinguish single click from a double click
+      if chk == 1
+          clickStatus=1;
+          chk = [];
+      end
+else
+      chk = [];
+      clickStatus=2;
+end
+
+function keypresscallback(hObject, evnt)
+%    fprintf('pressing: %s\n',evnt.Key);
+    guiData=guidata(hObject);
+    guiData.keyStr=evnt.Key;
+    guidata(hObject, guiData);
+    
+function keyreleasecallback(hObject,evnt)
+    guiData=guidata(hObject);
+    guiData.keyStr={};
+    guidata(hObject, guiData);
+%    fprintf('releasing: %s\n',evnt.Key);
+    
+
+
+% --- Executes on button press in CopyTableBT.
+function CopyTableBT_Callback(hObject, eventdata, handles)
+% hObject    handle to CopyTableBT (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+guiData=guidata(hObject);
+data=guiData.table.data;
+data=reformatTableData(data);
+len=size(data,1);
+nl=sprintf('\n');
+tab=CommonMethods.tab;
+line=CommonMethods.cell2str(data(1,:),tab);
+for r=2:len
+    line=[line nl CommonMethods.cell2str(data(r,:),tab)];
+end
+clipboard('copy',line);
+
+    function data=reformatTableData(data)
+        idx=find(ismember(data(:,2),'x,y,z'));
+        for i=1:length(idx)
+            ind=idx(i);
+            data{ind,2}=[data{ind,2} ' (mm)'];
+            data(ind,3:9)={' size ' ' p (corr) ' ' p (FWE) ' ' p (FDR) ' ' T ' ' Region ' ' '};
+        end
+        
+% --- Executes on button press in ShowSummaryTableBT.
+function ShowSummaryTableBT_Callback(hObject, eventdata, handles)
+% hObject    handle to ShowSummaryTableBT (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+guiData=guidata(hObject);
+%set(0,'CurrentFigure',guiData.summaryGui);
+figure(guiData.summaryGui);
+
+
+% --- Executes on selection change in StoreCoordinatesLst.
+function StoreCoordinatesLst_Callback(hObject, eventdata, handles)
+% hObject    handle to StoreCoordinatesLst (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: contents = cellstr(get(hObject,'String')) returns StoreCoordinatesLst contents as cell array
+%        contents{get(hObject,'Value')} returns selected item from StoreCoordinatesLst
+guiData=guidata(hObject);
+strs=get(guiData.StoreCoordinatesLst,'String');
+ind=get(guiData.StoreCoordinatesLst,'Value');
+CommonMethods.updateSPMExt(strs{ind});
+
+% --- Executes during object creation, after setting all properties.
+function StoreCoordinatesLst_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to StoreCoordinatesLst (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: listbox controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+% --- Executes on button press in StoreCoordinatesBT.
+function StoreCoordinatesBT_Callback(hObject, eventdata, handles)
+% hObject    handle to StoreCoordinatesBT (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+guiData=guidata(hObject);
+inds=guiData.selectedCellIndices;
+if(isempty(inds))
+    return;
+end
+sn=guiData.SSHandler.statSummaryNodes{guiData.table.summaryNodeLookupTable(inds(1,1),inds(1,2))};
+data=sn.data;
+coorStr=arrayfun(@(x)data{x}{1},1:length(data),'UniformOutput',false);
+set(guiData.StoreCoordinatesLst,'String',coorStr);
+
+% --- Executes on selection change in listbox2.
+function listbox2_Callback(hObject, eventdata, handles)
+% hObject    handle to listbox2 (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: contents = cellstr(get(hObject,'String')) returns listbox2 contents as cell array
+%        contents{get(hObject,'Value')} returns selected item from listbox2
+
+
+% --- Executes during object creation, after setting all properties.
+function listbox2_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to listbox2 (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: listbox controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+% --- Executes on button press in LockImageRB.
+function LockImageRB_Callback(hObject, eventdata, handles)
+% hObject    handle to LockImageRB (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hint: get(hObject,'Value') returns toggle state of LockImageRB
+
+
+% --- Executes on button press in ExportTableBT.
+function ExportTableBT_Callback(hObject, eventdata, handles)
+% hObject    handle to ExportTableBT (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+guiData=guidata(hObject);
+fname=guiData.SSHandler.summaryFile;
+folder=fileparts(fname);
+data=guiData.table.data;
+rows=size(data,1);
+cols=size(data,2);
+cname=data{1,1};
+cname=strrep(cname,':','_');
+cImg=data{1,2};
+[~,name,~]=fileparts(cImg);
+fname=fullfile(folder,[name '_' cname '.tsv']);
+tab=CommonMethods.tab;
+%line= cell2tableline(strs,pos,tw,del,strSpace)
+lines=arrayfun(@(x)CommonMethods.cell2tableline(data(x,:),1,cols,tab,' '),1:rows,'UniformOutput',false);
+fid=fopen(fname,'wt');
+for r=1:rows
+    fprintf(fid,'%s\n',lines{r});
+end
+fclose(fid);

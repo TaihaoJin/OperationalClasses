@@ -1,0 +1,317 @@
+classdef TDAtlasHandler < handle
+    %TDATLASHANDLER Summary of this class goes here
+    %   Detailed explanation goes here
+    
+    properties
+        Atlas_TD;%the TD and aal atlas, a cellarray of atlases
+        mat;%the matrix convert voxel indexes to mni coordinates
+        dim;%the dimension of the atlas
+        atlasDim%a 6-element vector. each element indicates the number of the structures of the level
+        hemisphereMniList;%left,center,and right are marked by 1, 2, and 3, respectively.
+        selectedMniList;% selected voxels are marked by 1 (0 otherwise).
+        %I have inherited the name MniList. It is actually a finary 3D
+        %maxtrix. 
+    end
+    
+    methods
+        function obj=TDAtlasHandler(repopulate)
+            classdir=fullfile(CommonEnvMethods.getMatlabProjectPath(),'MRI','OperationalClasses','utilities','Atlas');
+            objfile=fullfile(classdir,'TDAtlasHandler.mat');
+            if(~exist('repopulate', 'var'))
+                repopulate=false;
+            end
+            loaded=false;
+            if(exist(objfile,'file')&&~repopulate)
+                load(objfile);
+                loaded=true;
+            end
+            if(~loaded)
+                load(fullfile(classdir,'TDdatabase.mat'));
+                len=length(DB);
+            %    -58   -68    30 (100, 40,70)these two voxels are mislabeled as right cerebrum
+            %    -58   -68    32 (100, 40,70)
+                Atlas_TD=DB;
+                for i=1:len
+                    Atlas_TD{i}.mnilist_eroded=DB_eroded{i}.mnilist;
+                    anatomy=DB{i}.anatomy;
+                    idx=find(cellfun(@(x)isempty(x),anatomy));
+                    anatomy(idx)={'undefined'};
+                    Atlas_TD{i}.anatomy=anatomy;
+                    [anatomy_sorted,IA]=sort(anatomy);
+                    Atlas_TD{i}.anatomy_sorted=anatomy_sorted;
+                    Atlas_TD{i}.anatomy_order=IA;%the position of an anatomy name in the original cell array "TD{i}.anatomy"
+                end
+                mat = [...
+                     2     0     0   -92
+                     0     2     0  -128
+                     0     0     2   -74
+                     0     0     0     1];
+                obj.mat=mat;
+                obj.Atlas_TD=Atlas_TD;
+                obj.dim=size(Atlas_TD{1}.mnilist);
+                obj.buildStructureNodes();
+                obj.markHemispheres();
+               save(objfile,'obj');
+            end
+        end
+        
+        function buildStructureNodes(obj)
+            %only called by the constructor to initialize the class
+            len=length(obj.Atlas_TD);
+            obj.atlasDim=zeros(1,len);
+            for l=1:len
+                anatomy=obj.Atlas_TD{l}.anatomy;
+                len1=length(anatomy);
+                sn=cell(1,len1);
+                obj.atlasDim(l)=len1;
+                for i=1:len1
+                    sn{i}=AtlasStructureNode_TD(obj,l,i);
+                end
+                obj.Atlas_TD{l}.structureNodes=sn;
+            end
+        end
+        function updateSelection(obj, coors)
+            if(~isempty(coors))
+                volIndexes=CommonMethods.coor2ind_mat(coors, obj.mat);
+                inds=sub2ind(obj.dim, volIndexes(:,1),volIndexes(:,2),volIndexes(:,3));
+                
+            else
+                inds=[];
+            end
+            obj.selectedMniList=zeros(obj.dim);
+            obj.selectedMniList(inds)=1;
+            
+            len=length(obj.Atlas_TD);
+            for l=1:len
+                anatomy=obj.Atlas_TD{l}.anatomy;
+                for i=1:length(anatomy)
+                    sn=obj.Atlas_TD{l}.structureNodes{i};
+                    sn.updateSelection(obj);
+                end
+            end
+        end
+        
+        function markHemispheres(obj)
+            %only called by the constructor to initialize the class
+            obj.hemisphereMniList=zeros(obj.dim);
+            TD=obj.Atlas_TD{1};
+            mnilist=TD.mnilist;
+            indsL=[find(mnilist==1); find(mnilist==4); find(mnilist==5)];
+            indsR=[find(mnilist==2); find(mnilist==3); find(mnilist==6)];
+            indsC=find(mnilist==7);
+%             obj.hemisphereMniList(indsL)=1;
+%             obj.hemisphereMniList(indsC)=2;
+%             obj.hemisphereMniList(indsR)=3;
+            
+            inds=find(obj.hemisphereMniList==0);
+            [subs1, subs2, subs3]=ind2sub(obj.dim, inds);
+            volInds=[subs1 subs2 subs3];
+            coors=CommonMethods.ind2coor_mat(volInds, obj.mat);
+            xs=coors(:,1);
+            obj.hemisphereMniList(inds(xs<0))=1;
+            obj.hemisphereMniList(inds(xs==0))=2;
+            obj.hemisphereMniList(inds(xs>0))=3;
+        end
+        function [atlasInds,sideness,defined]=getAtlasIndexes(obj,coor,eroded)    
+            %this function find the atlas indexes corresponding to the
+            %coordinates
+            %sideness:1 left, 2 center, 3 right
+            if(~exist('eroded','var'))
+                eroded=false;
+            end            
+            N = size(coor, 1);    
+            len=length(obj.Atlas_TD);
+            dim=obj.dim;
+            inds=CommonMethods.coor2ind_mat(coor, obj.mat);%voxel indexes
+            invalid=arrayfun(@(x)inds(x,1)<=0||inds(x,1)>dim(1)||inds(x,2)<=0||inds(x,2)>dim(2)||inds(x,3)<=0||inds(x,3)>dim(3), 1:N);
+            atlasInds=zeros(N,len);
+            sideness=zeros(N,1);
+            defined=zeros(N,1);
+            if(eroded)
+                mnilists=arrayfun(@(x)obj.Atlas_TD{x}.mnilist_eroded,1:len,'UniformOutput',false);
+            else
+                mnilists=arrayfun(@(x)obj.Atlas_TD{x}.mnilist,1:len,'UniformOutput',false);
+            end
+            
+            for i=1:N
+                if(invalid(i))
+                    continue
+                end
+                for j=1:len
+                    atlasInds(i,j)=mnilists{j}(inds(i,1),inds(i,2),inds(i,3));
+                end
+                sideness(i)=obj.hemisphereMniList(inds(i,1),inds(i,2),inds(i,3));
+                defined(i)=atlasInds(i,3)>0;
+            end
+            cmd='atlasInds1D=sub2ind(obj.atlasDim';
+            for i=1:length(obj.atlasDim)
+                cmd=[cmd ', atlasInds(:,' num2str(i) ')'];
+            end
+            cmd=[cmd ');'];
+%            eval(cmd);
+        end
+        
+        function [structures, atlasIndexes]=findStructures(obj,coors,eroded)
+            %this function take the mni coordinates as an input arguments
+            %and output the corresponding atlas names.
+            %structures: cellarray structure names
+            %atlasIndexes: the indexes of the anatomical regions. 
+            %coors is expected to by a N by 3 matrix, N is the number of
+            %points.
+            if(~exist('eroded','var'))
+                eroded=false;
+            end
+            if(size(coors,2)~=3)
+                coors=coors';
+            end
+            N = size(coors, 1);    
+            len=length(obj.Atlas_TD);
+            atlasIndexes=obj.getAtlasIndexes(coors,eroded);
+            structures=cell(N,len);
+            for i=1:N
+                str='';
+                for j=1:len
+                    ind=atlasIndexes(i,j);
+                    if(ind==0)
+                        st='undefined';
+                    else
+                        st=obj.Atlas_TD{j}.anatomy{ind};
+                    end
+                    structures{i,j}=st;
+                end
+            end
+        end
+        function sNodes=getSelectedStructureNodes(obj,level)
+            sNodes=obj.Atlas_TD{level}.structureNodes;
+            selected=cellfun(@(x)x.IsSelected(),sNodes);
+            sNodes=sNodes(selected);
+        end
+        function name=getStructureName(obj,level,ind)
+            name=obj.Atlas_TD{level}.anatomy{ind};
+        end
+        
+        function vol=getAnatomy(obj,anatomy)
+            %anatomy: a cell array of anatomy names at different level
+            
+            %return vol where the anatomy is labeled with 1;
+            
+            len=length(anatomy);
+            vol=[];
+            for i=1:len
+                name=anatomy{i};
+                if isempty(name)
+                    continue;
+                end
+                anode=obj.Atlas_TD{i};
+                idx=find(ismember(anode.anatomy,name));
+                if isempty(idx)
+                    continue;
+                end
+                if isempty(vol)
+                    vol=anode.mnilist==idx(1);
+                else
+                    vol=vol.*anode.mnilist==idx(1);
+                end
+            end
+        end
+        
+        function subStructs=getSubstructures(obj, anatomys,level,level_sub)
+            %finding the substructures of the anatomys
+            %anatomys: cell array of the anatomy name at the level == level
+            %level_sub: the level of the substructures.
+            sNodes=obj.Atlas_TD{level_sub}.structureNodes;
+            subStructs={};
+            for i=1:length(sNodes)
+                sn=sNodes{i};
+                if any(cellfun(@(x)sn.IsSubStructureOf(x,level),anatomys))
+                    subStructs{end+1}=sn;
+                end
+            end
+        end
+    end
+    
+    methods (Static=true)
+        function test()
+            repopulate=false;
+            coors=[-28 3, 46; 25 15 -30; 2 5 7; 45 3 2];
+            obj=TDAtlasHandler(repopulate);
+            [structures, atlasIndexes]=obj.findStructures(coors);
+            indsL=find(obj.hemisphereMniList==1);
+            indsC=find(obj.hemisphereMniList==2);
+            indsR=find(obj.hemisphereMniList==3);
+            
+            [subs1, subs2, subs3]=ind2sub(obj.dim, indsL);
+            volInds=[subs1 subs2 subs3];
+            coors=CommonMethods.ind2coor_mat(volInds, obj.mat);
+            xs=coors(:,1);
+            sizeL=[nnz(xs<0) nnz(xs==0) nnz(xs>0)];
+            xsL=[min(xs) max(xs)];
+            
+            [subs1, subs2, subs3]=ind2sub(obj.dim, indsC);
+            volInds=[subs1 subs2 subs3];
+            coors=CommonMethods.ind2coor_mat(volInds, obj.mat);
+            xs=coors(:,1);
+            sizeC=[nnz(xs<0) nnz(xs==0) nnz(xs>0)];
+            xsC=[min(xs) max(xs)];
+            
+            [subs1, subs2, subs3]=ind2sub(obj.dim, indsR);
+            volInds=[subs1 subs2 subs3];
+            coors=CommonMethods.ind2coor_mat(volInds, obj.mat);
+            xs=coors(:,1);
+            sizeR=[nnz(xs<0) nnz(xs==0) nnz(xs>0)];
+            xsR=[min(xs) max(xs)];
+            %    -58   -68    30 (100, 40,70)these two voxels are mislabeled as right cerebrum
+            %    -58   -68    32 (100, 40,70)
+            
+            %      6   -74   -12 these voxels are mislabeled as left cerebrum
+            %      6   -74   -10
+            %      6   -74    -8
+            %      4   -76   -12
+            %      4   -74   -12
+            %      4   -76   -10
+            %      4   -74   -10
+            %      4   -76    -8
+            %      4   -74    -8
+            %      2   -78   -12
+            %      2   -76   -12
+            %      2   -78   -10
+            %      2   -76   -10
+            %      2   -78    -8
+            %      2   -76    -8
+
+
+            status=1;
+        end
+        
+        function onelineName=getOnelineStructureName(cellarrayName)
+            st=cellarrayName{1};
+            if(~strcmpi(st,'undefined'))
+                sname=st;
+            else
+                sname='';
+            end
+            
+            st=cellarrayName{2};
+            if(~strcmpi(st,'undefined'))
+                sname=[sname '_' st];
+            end
+            
+            st=cellarrayName{3};
+            if(~strcmpi(st,'undefined'))
+                sname=[sname '_' st];
+            end
+            
+            st=cellarrayName{4};
+            if(~strcmpi(st,'undefined'))
+                sname=[sname '_' st];
+            end
+            
+            st=cellarrayName{5};
+            if(~strcmpi(st,'undefined'))
+                sname=[sname '_' st];
+            end
+            onelineName=sname;
+        end
+    end
+end
+
